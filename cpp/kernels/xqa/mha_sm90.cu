@@ -786,7 +786,11 @@ CUBIN_EXPORT __global__
     static_assert(multiBlockMinNbTiles >= multiBlockMinNbTilesPerCta * 2);
     assert(isMultiBlockMode == (nbSubSeq > 1));
 #if SKIP_SOFTMAX_ATTN
+#if SKIP_SOFTMAX_ATTN_FIX_THRESHOLD_GREATER_THAN_ONE
+    bool const disableSkipForShortSeq = false;
+#else
     bool const disableSkipForShortSeq = (cacheSeqLen < skipSoftmaxThresholdScaleFactor);
+#endif
     float const skipSoftmaxThreshold = disableSkipForShortSeq ? 0.0f : skipSoftmaxThresholdScaleFactor / cacheSeqLen;
 #endif
     if (idxSubSeq >= nbSubSeq)
@@ -3442,10 +3446,36 @@ uint32_t computeNbSubSeqPerSeqHopperF8MHA(
             return val;
         }
     }
-    float const factor = 0.25f;
-    return mha::min<uint32_t>(
-        mha::max<uint32_t>(1U, (uint32_t) round(prop.multiProcessorCount * 3 / (batchSize * nbKHeads) * factor)),
-        divUp(maxSeqLen, gemm0CtaTileNbTokens));
+    // Constants inlined from decoderXQAConstants.h
+    constexpr int kMinHistoryTokensPerBlock = 128;
+    constexpr int kTargetWaveFactor = 8;
+    constexpr int kXqaMaxNumSubSeq = 6000; // non-MLA case
+
+    int multiprocessor_count = prop.multiProcessorCount;
+
+    int multi_block_count = 1;
+
+    multi_block_count = maxSeqLen / kMinHistoryTokensPerBlock;
+    // avoid using too many blocks for one sequence, otherwise the final reduction may dominate.
+    multi_block_count = std::min(multi_block_count, static_cast<int>(std::round(std::sqrt(multi_block_count * 8.F))));
+    multi_block_count = std::max(multi_block_count, 1);
+    // adjust to kTargetWaveFactor, as already initialized using kMinHistoryTokensPerBlock, only need to decrease.
+    double wave_count = (double) batchSize * nbKHeads * multi_block_count / (double) multiprocessor_count;
+    double adj_factor = wave_count / (double) kTargetWaveFactor;
+    if (adj_factor > 1.0)
+    {
+        multi_block_count = floor(multi_block_count / adj_factor);
+    }
+    multi_block_count = std::max(multi_block_count, 1);
+
+    // Add limitation due to reserved workspace size.
+    // When batchSize is large, multi-block is useless anyway. So large workspace is not useful and we can set a hard
+    // limit for workspace size (computed from kXqaMaxNumSubSeq).
+    multi_block_count = std::max(std::min(multi_block_count, kXqaMaxNumSubSeq / static_cast<int>(batchSize)), 1);
+
+    assert(multi_block_count >= 1 && "MultiBlock count should be larger than 1");
+    assert((multi_block_count == 1 || batchSize * multi_block_count <= kXqaMaxNumSubSeq) && "Insufficient workspace");
+    return multi_block_count;
 }
 
 void launchHopperF8MHA(cudaDeviceProp const& prop, uint32_t nbKHeads,

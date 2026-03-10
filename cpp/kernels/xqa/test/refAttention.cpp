@@ -69,7 +69,11 @@ Eigen::Matrix<float, headGrpSize, validElemsPerHead, Eigen::RowMajor> refFlashAt
     {
         skipRowMaxs[i].fill(-INFINITY);
     }
+#if SKIP_SOFTMAX_ATTN_FIX_THRESHOLD_GREATER_THAN_ONE
+    bool const disableSkipForShortSeq = false;
+#else
     bool const disableSkipForShortSeq = (seqLen < skipSoftmaxThresholdScaleFactor);
+#endif
     float const skipSoftmaxThreshold = disableSkipForShortSeq ? 0.0f : skipSoftmaxThresholdScaleFactor / seqLen;
 
     for (uint32_t idxTile = idxTileBeg; idxTile < nbTiles; idxTile++)

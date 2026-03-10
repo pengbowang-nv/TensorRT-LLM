@@ -908,7 +908,7 @@ void runTest(uint32_t batchSize, uint32_t seqLen, bool testPerf, bool refCheck, 
 #if SKIP_SOFTMAX_ATTN && SKIP_SOFTMAX_ATTN_BLOCK_STATS
         printf("kernel skippedBlockCount: %d/%d (%.2f%%)\n", kernelSkippedBlockCount[0], kernelTotalBlockCount[0],
             kernelTotalBlockCount[0] == 0 ? 0.0f : 100.0f * kernelSkippedBlockCount[0] / kernelTotalBlockCount[0]);
-        printf("dramSolRatioWithSkip: %f%% (%f ms, TOPS = %f)\n", dramSolRatioWithSkip * 100, ms, tops);
+        printf("dramSolRatio: %f%% (%f ms, TOPS = %f)\n", dramSolRatio * 100, ms, tops);
 #else
         printf("dramSolRatio: %f%% (%f ms, TOPS = %f)\n", dramSolRatio * 100, ms, tops);
 #endif
@@ -1421,6 +1421,52 @@ TEST(Perf, tmp)
 #endif
     runTest<4>(32, 100, true, false);
 }
+
+#if SKIP_SOFTMAX_ATTN
+TEST(Perf, skip_softmax_attn)
+{
+#ifndef NDEBUG
+    GTEST_SKIP() << "Skipping perf tests for debug build";
+#endif
+    // These are the desired actual thresholds (the kernel computes threshold = scaleFactor / seqLen,
+    // so we must pass scaleFactor = threshold * seqLen).
+    std::vector<float> thresholdList = {0.f, 0.001f, 0.01f, 0.05f, 0.1f, 0.15f, 0.2f, 0.25f, 0.3f, 0.4f, 0.5f, 0.6f,
+        0.7f, 0.8f, 0.9f, 1.0f, 1.2f, 1.5f, 2.0f, 5.0f};
+    std::vector<uint32_t> batchSizeList = {64};
+    std::vector<uint32_t> seqLenList = {16 * 1024, 64 * 1024};
+    for (uint32_t batchSize : batchSizeList)
+    {
+        for (uint32_t seqLen : seqLenList)
+        {
+            for (float threshold : thresholdList)
+            {
+                // Convert threshold to scaleFactor: kernel does threshold = scaleFactor / seqLen
+                float const scaleFactor = threshold * seqLen;
+                printf("batchSize: %u, num_k_heads=4, seqLen: %u, skipSoftmaxThreshold: %f\n", batchSize, seqLen,
+                    threshold);
+                runTest<4>(batchSize, seqLen, true, false, false, false, false, ~0U, 1U << 30, scaleFactor);
+            }
+        }
+    }
+}
+#else
+TEST(Perf, skip_softmax_attn)
+{
+#ifndef NDEBUG
+    GTEST_SKIP() << "Skipping perf tests for debug build";
+#endif
+    std::vector<uint32_t> batchSizeList = {64};
+    std::vector<uint32_t> seqLenList = {16 * 1024, 64 * 1024};
+    for (uint32_t batchSize : batchSizeList)
+    {
+        for (uint32_t seqLen : seqLenList)
+        {
+            printf("batchSize: %u, num_k_heads=4, seqLen: %u, original attention kernel\n", batchSize, seqLen);
+            runTest<4>(batchSize, seqLen, true, false, false, false, false, ~0U, 1U << 30, 0);
+        }
+    }
+}
+#endif
 #endif
 
 #if ENABLE_NVRTC

@@ -28,6 +28,43 @@ set(PAGED_KV_CACHE_LAYOUT
     CACHE STRING "Paged KV cache format (0 for XQA Original, 1 for VLLM)")
 add_definitions(-DPAGED_KV_CACHE_LAYOUT=${PAGED_KV_CACHE_LAYOUT})
 
+# Configurable kernel parameters (override defaults in defines.h)
+set(HEAD_ELEMS
+    ""
+    CACHE STRING "Head dimension (default 128 in defines.h)")
+set(HEAD_GRP_SIZE
+    ""
+    CACHE STRING "num_q_heads / num_kv_heads (default 8 in defines.h)")
+set(INPUT_FP16
+    ""
+    CACHE STRING "1=FP16, 0=BF16 input/output (default 1 in defines.h)")
+set(CACHE_ELEM_ENUM
+    ""
+    CACHE STRING
+          "KV cache type: 0=half/bf16, 1=int8, 2=fp8 (default 2 in defines.h)")
+option(SKIP_SOFTMAX_ATTN "Enable skip softmax attention" OFF)
+option(SKIP_SOFTMAX_ATTN_BLOCK_STATS
+       "Enable skip softmax block statistics (for sparsity reporting)" OFF)
+
+if(NOT HEAD_ELEMS STREQUAL "")
+  add_definitions(-DHEAD_ELEMS=${HEAD_ELEMS})
+endif()
+if(NOT HEAD_GRP_SIZE STREQUAL "")
+  add_definitions(-DHEAD_GRP_SIZE=${HEAD_GRP_SIZE})
+endif()
+if(NOT INPUT_FP16 STREQUAL "")
+  add_definitions(-DINPUT_FP16=${INPUT_FP16})
+endif()
+if(NOT CACHE_ELEM_ENUM STREQUAL "")
+  add_definitions(-DCACHE_ELEM_ENUM=${CACHE_ELEM_ENUM})
+endif()
+if(SKIP_SOFTMAX_ATTN)
+  add_definitions(-DSKIP_SOFTMAX_ATTN=1)
+endif()
+if(SKIP_SOFTMAX_ATTN_BLOCK_STATS)
+  add_definitions(-DSKIP_SOFTMAX_ATTN_BLOCK_STATS=1)
+endif()
+
 # todo: remove include_directories link_directories and link libs like
 # CUDA::cuda_driver CUDA::cudart CUDA::nvrtc
 find_package(CUDAToolkit REQUIRED)
@@ -88,11 +125,17 @@ add_custom_command(
 add_custom_target(xqa_sources_h DEPENDS ${XQA_SOURCES_H})
 
 if(BUILD_XQA_TESTS)
+  include(FetchContent)
+
   # Try to find system installed GTest first
   find_package(GTest QUIET)
   if(NOT GTest_FOUND)
     message(STATUS "System GTest not found, fetching from repository")
-    include(FetchContent)
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG v1.15.2
+      GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(googletest)
     include(GoogleTest)
   endif()
@@ -101,7 +144,11 @@ if(BUILD_XQA_TESTS)
   find_package(Eigen3 3.4 QUIET)
   if(NOT Eigen3_FOUND)
     message(STATUS "System Eigen not found, fetching from repository")
-    include(FetchContent)
+    FetchContent_Declare(
+      eigen
+      GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+      GIT_TAG 3.4.0
+      GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(eigen)
   endif()
 
