@@ -231,6 +231,18 @@ public:
         checkFmhaOptions(options, optionsFromArgs);
         // Update the options if needed.
         updateFmhaOptions(options, optionsFromArgs);
+        // HOTFIX: FmhaDispatcher path may leave multiCtasKvCounter/Scratch null when use GmemReduction. Force Disabled
+        // here so as to avoid crashing.
+        // TODO: add scratch allocation and re-enable GmemReduction.
+        if (options.mMultiCtasKvMode == tensorrt_llm::kernels::MultiCtasKvMode::GmemReduction)
+        {
+            if (params.multiCtasKvScratchPtr == nullptr || params.multiCtasKvCounterPtr == nullptr)
+            {
+                TLLM_LOG_DEBUG(
+                    "MultiCtasKvScratchPtr/MultiCtasKvCounterPtr is null, forcing MultiCtasKvMode to Disabled");
+                options.mMultiCtasKvMode = tensorrt_llm::kernels::MultiCtasKvMode::Disabled;
+            }
+        }
         // The number of CtasQ and CtasKv per sequence, Ctas in the Y dimension, and Ctas in the Z
         // dimension.
         computeNumCtas(options, params.mMultiProcessorCount);
@@ -280,6 +292,20 @@ public:
         updateFmhaOptions(options, optionsFromArgs);
         // The number of CtasQ and CtasKv per sequence, Ctas in the Y dimension, and Ctas in the Z
         // dimension.
+
+        // HOTFIX: FmhaDispatcher path may leave multiCtasKvCounter/Scratch null when use GmemReduction. Force Disabled
+        // here so as to avoid crashing.
+        // TODO: add scratch allocation and re-enable GmemReduction.
+        if (options.mMultiCtasKvMode == tensorrt_llm::kernels::MultiCtasKvMode::GmemReduction)
+        {
+            if (params.multiCtasKvScratchPtr == nullptr || params.multiCtasKvCounterPtr == nullptr)
+            {
+                TLLM_LOG_DEBUG(
+                    "MultiCtasKvScratchPtr/MultiCtasKvCounterPtr is null, forcing MultiCtasKvMode to Disabled");
+                options.mMultiCtasKvMode = tensorrt_llm::kernels::MultiCtasKvMode::Disabled;
+            }
+        }
+
         auto [numCtasX, numCtasY, numCtasZ] = computeNumCtas(options, params.mMultiProcessorCount);
 
         // Set the launch grid size.
