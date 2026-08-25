@@ -17,6 +17,7 @@
 #include "tensorrt_llm/kernels/kdaDecode/kdaDecode.h"
 
 #include "tensorrt_llm/common/cudaUtils.h"
+#include "tensorrt_llm/kernels/kdaDecode/kdaDecodeInternal.h"
 
 #include <cstdint>
 #include <cuda_bf16.h>
@@ -1583,27 +1584,28 @@ void dispatch_kda_decode_heads(KdaDecodeLaunchParams const& p)
     }
 }
 
-} // namespace
-
-void invokeKdaDecode(KdaDecodeParams const& params, cudaStream_t stream)
+template <bool kCompact>
+void launchKdaDecodeLegacyKernel(KdaDecodeParams const& params, cudaStream_t stream)
 {
-    TLLM_CHECK_WITH_INFO(params.numHeads == params.numValueHeads, "KDA decode requires numHeads == numValueHeads");
-    bool const useCompactHeads = shouldUseCompactHeads(params.batchSize, params.numHeads, params.numValueHeads);
     KdaDecodeLaunchParams const launchParams{params.xQ, params.xK, params.xV, params.wQT, params.wKT, params.wVT,
         params.biasQ, params.biasK, params.biasV, params.convStateQ, params.convStateK, params.convStateV, params.logA,
         params.gate, params.dtBias, params.beta, params.outputNormGate, params.outputNormWeight, params.ssmStateIndices,
         params.cuSeqlens, params.state, params.stateSlotStride, params.output, params.batchSize, params.numHeads,
         params.numValueHeads, params.applyOutputNorm, params.updateConvCache, params.useLowerBound,
         params.applyBetaSigmoid, params.lowerBound, params.scale, params.outputNormEps, stream};
-    if (useCompactHeads)
-    {
-        dispatch_kda_decode_heads<true>(launchParams);
-    }
-    else
-    {
-        dispatch_kda_decode_heads<false>(launchParams);
-    }
-    TLLM_CUDA_CHECK(cudaGetLastError());
+    dispatch_kda_decode_heads<kCompact>(launchParams);
+}
+
+} // namespace
+
+void launchKdaDecodeLegacyCompactHeads(KdaDecodeParams const& params, cudaStream_t stream)
+{
+    launchKdaDecodeLegacyKernel<true>(params, stream);
+}
+
+void launchKdaDecodeLegacyManyHeads(KdaDecodeParams const& params, cudaStream_t stream)
+{
+    launchKdaDecodeLegacyKernel<false>(params, stream);
 }
 
 } // namespace kernels::kdaDecode
