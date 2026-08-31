@@ -380,7 +380,6 @@ def _register_fake():
           onorm_g: torch.Tensor,
           onorm_weight: torch.Tensor,
           ssm_state_indices: Optional[torch.Tensor],
-          cu_seqlens: torch.Tensor,
           state: torch.Tensor,
           apply_onorm: bool,
           update_conv_cache: bool,
